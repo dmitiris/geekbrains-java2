@@ -11,7 +11,7 @@ import java.util.Date;
 public class ClientHandler {
     private ServerWorker server;
     private Socket socket;
-    private String name;
+    private String nick;
     static private Integer counter = 0;
 
     private DataInputStream in;
@@ -25,7 +25,7 @@ public class ClientHandler {
     }
 
     String getName(){
-        return name;
+        return nick;
     }
 
     void sendMessage(String msg){
@@ -43,7 +43,6 @@ public class ClientHandler {
     public ClientHandler(ServerWorker server, Socket socket) {
         this.server = server;
         this.socket = socket;
-        this.name = "Anonymus_" + ++counter;
 
         try {
             this.in = new DataInputStream(socket.getInputStream());
@@ -58,15 +57,60 @@ public class ClientHandler {
                 try{
                     while (true) {
                         String str = in.readUTF();
-                        if (str.equalsIgnoreCase("\\q")){
-                            out.writeUTF("\\servclose");
-                            System.out.println("[" + getTime() + "] " + name + " left");
-                            break;
+
+                        if (str.startsWith("/auth")) {
+                            String[] tokens = str.split(" ");
+
+                            String newNick = AuthService.getNickByLoginAndPass(tokens[1], tokens[2]);
+                            if (newNick != null) {
+                                if (server.isConnected(newNick)) {
+                                    sendMessage(String.format("Пользователь %s уже подключён", newNick));
+                                } else {
+                                    sendMessage("/authok");
+                                    nick = newNick;
+                                    server.subscribe(ClientHandler.this);
+                                    break;
+                                }
+                            } else {
+                                sendMessage("Неверный логин/пароль");
+                            }
                         }
-                        server.broadcastMessage( "[" + getTime() + "]" + name + ": " + str);
+                    }
+                    while (true) {
+                        String str = in.readUTF();
+                        if (str.equalsIgnoreCase("/exit")){
+                            out.writeUTF("/servclose");
+                            System.out.println("[" + getTime() + "] " + nick + " left");
+                            break;
+                        } else if (str.startsWith("/w")){
+                            String[] message = str.split(" ");
+                            if (message.length > 2) {
+                                StringBuilder privateMessage = new StringBuilder();
+                                String recipient = message[1];
+                                String sender = ClientHandler.this.nick;
+                                if (recipient.equalsIgnoreCase(sender)) {
+                                    sendMessage("В этом чате нельзя общаться с умными людьми (попытка отправить сообщение самому себе)");
+                                } else if (server.isConnected(recipient)) {
+                                    privateMessage.append(String.format("%s [%s to %s]", getTime(), sender, recipient));
+
+                                    for (int i = 2; i < message.length; i++) {
+                                        privateMessage.append(" ");
+                                        privateMessage.append(message[i]);
+                                    }
+                                    server.sendPrivateMessage(recipient, privateMessage.toString());
+                                    sendMessage(privateMessage.toString());
+                                } else {
+                                    sendMessage(String.format("Пользователь %s не в сети или его не существует", message[1]));
+                                }
+
+                            }
+
+                        } else {
+                            server.broadcastMessage("[" + getTime() + "] " + nick + ": " + str);
+                        }
                     }
                 } catch (IOException e) {
-                    System.out.println("[" + getTime() + "] " + name + " suddenly left");
+                    System.out.println("[" + getTime() + "] " + nick + " suddenly left");
                     e.printStackTrace();
                 } finally {
                     try {
@@ -84,7 +128,8 @@ public class ClientHandler {
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    server.broadcastMessage("[" + getTime() + "]System: " + name + " left");
+                    server.unscribe(ClientHandler.this);
+                    server.broadcastMessage("[" + getTime() + "] System: " + nick + " left");
 
                 }
 
