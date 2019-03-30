@@ -3,19 +3,17 @@ package Server;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Vector;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ServerWorker {
-    private Vector<ClientHandler> clients = new Vector<>();
-    private HashMap<String, ClientHandler> clientMap = new HashMap<>();
+    private ConcurrentHashMap<String, ClientHandler> clientMap = new ConcurrentHashMap<>();
 
     public ServerWorker() {
         ServerSocket server = null;
         Socket socket = null;
 
         try {
-            AuthService.connect();
+            DataBaseService.connect();
             server = new ServerSocket(8189);
             System.out.println("Server started");
 
@@ -36,25 +34,26 @@ public class ServerWorker {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            AuthService.disconnect();
+            DataBaseService.disconnect();
         }
     }
 
-    public void broadcastMessage(String msg){
-        for (ClientHandler c : clients) {
-            c.sendMessage(msg);
+    public void broadcastMessage(ClientHandler from, String msg){
+        for (ClientHandler c : clientMap.values()) {
+            if (!c.checkBlackList(from.getName())){
+                c.sendMessage(msg);
+            }
+
         }
     }
 
     public void subscribe(ClientHandler client) {
-        clients.add(client);
         clientMap.put(client.getName(), client);
-        System.out.println("[" + client.getTime() + "] " + client.getName() + " connected");
-        broadcastMessage("[" + client.getTime() + "] System: " + client.getName() + " connected");
+        System.out.println(String.format("[%s] System: %s connected", client.getTime(), client.getName()));
+        broadcastMessage(client, String.format("[%s] System: %s connected", client.getTime(), client.getName()));
     }
 
     public void unscribe(ClientHandler client) {
-        clients.remove(client);
         clientMap.remove(client.getName());
     }
 
@@ -62,8 +61,13 @@ public class ServerWorker {
         return clientMap.containsKey(newNick);
     }
 
-    public void sendPrivateMessage(String nickname, String message) {
-        ClientHandler client = clientMap.get(nickname);
-        client.sendMessage(message);
+    public void sendPrivateMessage(ClientHandler from, String nickname, String message) {
+        ClientHandler to = clientMap.get(nickname);
+        if (to.checkBlackList(from.getName())) {
+            from.sendMessage(String.format("Пользователь %s добавил вас в чёрный список", nickname));
+        } else {
+            to.sendMessage(message);
+            from.sendMessage(message);
+        }
     }
 }

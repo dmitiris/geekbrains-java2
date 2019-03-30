@@ -38,6 +38,7 @@ public class Controller {
     TextField passwordField;
 
     private boolean isAuthorized;
+    private boolean isAlive = true;
 
     Socket socket;
     DataInputStream in;
@@ -87,13 +88,16 @@ public class Controller {
                             if (str.startsWith("/authok")) {
                                 setAuthorized(true);
                                 break;
+                            } else if (str.startsWith("/servclose")) {
+                                isAlive = false;
+                                break;
                             } else {
                                 textArea.appendText(str + "\n");
                             }
                         }
 
 
-                        while (true) {
+                        while (isAlive) {
                             String str = in.readUTF();
                             if (str.equalsIgnoreCase("/servclose")) {
                                 break;
